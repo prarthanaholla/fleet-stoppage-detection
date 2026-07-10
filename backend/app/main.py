@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from sqlalchemy import text
 from app.db.session import AsyncSessionLocal
+from app.schemas.gps import GPSPingSchema
 
 app = FastAPI()
 
@@ -20,4 +21,14 @@ async def health_check():
     return {
         "status": overall,
         "database": db_status
+    }
+@app.post("/api/v1/ingest")
+async def ingest_gps(ping: GPSPingSchema):
+    return {
+        "received": True,
+        "vehicle_name": ping.vehicle_name,
+        "lat": ping.lat,
+        "lng": ping.lng,
+        "gps_time": str(ping.gps_time),
+        "speed": ping.speed
     }
