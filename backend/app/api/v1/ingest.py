@@ -6,6 +6,7 @@ from app.schemas.gps import GPSPingSchema
 from app.models.vehicles import Vehicle
 from app.models.gps_raw import GpsRaw
 from app.auth import decode_access_token, security
+from app.workers.pipeline import process_gps_point
 
 router = APIRouter()
 
@@ -52,10 +53,16 @@ async def ingest_gps(
                 speed=ping.speed
             )
             session.add(gps_point)
+            await session.flush()
+            point_id = gps_point.id
+
+    process_gps_point.delay(point_id)
 
     return {
         "received": True,
         "vehicle_id": vehicle_id,
         "vehicle_name": ping.vehicle_name,
-        "org_id": org_id
+        "org_id": org_id,
+        "point_id": point_id,
+        "status": "queued"
     }
