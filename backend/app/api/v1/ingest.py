@@ -6,7 +6,7 @@ from app.schemas.gps import GPSPingSchema
 from app.models.vehicles import Vehicle
 from app.models.gps_raw import GpsRaw
 from app.auth import decode_access_token, security
-from app.workers.pipeline import process_gps_point
+from app.workers.pipeline.tasks import process_gps_point
 
 router = APIRouter()
 
@@ -66,3 +66,13 @@ async def ingest_gps(
         "point_id": point_id,
         "status": "queued"
     }
+@router.post("/trigger-pipeline/{vehicle_id}")
+async def trigger_pipeline(vehicle_id: int, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    from app.workers.pipeline.tasks import trigger_pipeline_now
+    trigger_pipeline_now.delay(vehicle_id)
+    return {"status": "triggered", "vehicle_id": vehicle_id}

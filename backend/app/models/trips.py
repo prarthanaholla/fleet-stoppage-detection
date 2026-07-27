@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, Float, DateTime, ForeignKey
 from app.db.base import Base
 
 class Trip(Base):
@@ -10,3 +10,4 @@ class Trip(Base):
     ended_at = Column(DateTime, nullable=True)
     total_distance_m = Column(Float, nullable=False, default=0)
     stoppage_count = Column(Integer, nullable=False, default=0)
+    processed = Column(Boolean, nullable=False, default=False) 

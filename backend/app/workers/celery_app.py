@@ -11,7 +11,7 @@ celery_app = Celery(
     broker=REDIS_URL,
     backend=REDIS_URL,
     include=[
-        "app.workers.pipeline"
+        "app.workers.pipeline.tasks"
     ]
 )
 
@@ -23,4 +23,10 @@ celery_app.conf.update(
     enable_utc=True,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    beat_schedule={
+        "check-trip-endings-every-5-minutes": {
+            "task": "app.workers.pipeline.tasks.check_trip_endings",
+            "schedule": 300.0,
+        }
+    }
 )

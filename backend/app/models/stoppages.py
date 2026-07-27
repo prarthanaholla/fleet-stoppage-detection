@@ -10,8 +10,12 @@ class Stoppage(Base):
     location = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
     started_at = Column(DateTime, nullable=False)
     ended_at = Column(DateTime, nullable=True)
-    status = Column(String(20), nullable=False, default="ACTIVE")
+    duration_seconds = Column(Integer, nullable=True)
+    status = Column(String(20), nullable=False, default="SUSPECTED")
 
     __table_args__ = (
-        CheckConstraint("status IN ('ACTIVE', 'ENDED')", name="valid_status"),
+        CheckConstraint(
+            "status IN ('SUSPECTED', 'CONFIRMED', 'FALSE_ALARM', 'ACTIVE', 'ENDED')",
+            name="valid_status"
+        ),
     )
