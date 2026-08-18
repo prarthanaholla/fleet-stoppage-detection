@@ -9,11 +9,17 @@ from app.models.gps_raw import GpsRaw
 from app.auth import decode_access_token, security
 from app.workers.pipeline.tasks import process_gps_point
 from app.workers.pipeline.dev_tools import trigger_pipeline_now
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from fastapi import Request
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/ingest")
+@limiter.limit("30/minute")
 async def ingest_gps(
+    request: Request, 
     ping: GPSPingSchema,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):

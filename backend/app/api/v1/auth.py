@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.models.organisations import Organisation
@@ -9,9 +11,12 @@ from app.schemas.auth import RegisterSchema, LoginSchema
 from app.auth import hash_password, verify_password, create_access_token
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.post("/register")
-async def register(data: RegisterSchema):
+@limiter.limit("3/minute")
+async def register(request: Request, data: RegisterSchema):
     async with AsyncSessionLocal() as session:
         async with session.begin():
 
@@ -44,7 +49,7 @@ async def register(data: RegisterSchema):
                 password_hash=hash_password(data.password)
             )
             session.add(user)
-            await session.flush()  # gets user.id without committing
+            await session.flush()
 
             # Link user to org
             org_user = OrgUser(
@@ -58,7 +63,8 @@ async def register(data: RegisterSchema):
 
 
 @router.post("/login")
-async def login(data: LoginSchema):
+@limiter.limit("5/minute")
+async def login(request: Request, data: LoginSchema):
     async with AsyncSessionLocal() as session:
 
         # Find user by email
