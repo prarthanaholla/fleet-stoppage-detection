@@ -1,9 +1,8 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
-from sqlalchemy import select, text
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from app.workers.celery_app import celery_app
 from app.workers.pipeline.edp import simplify_with_estc
@@ -24,6 +23,37 @@ engine = create_engine(DATABASE_URL)
 
 def get_session():
     return Session(engine)
+
+
+def _utc_from_ms(ms: int) -> datetime:
+    """
+    Convert millisecond timestamp to UTC datetime.
+    Uses timezone-aware conversion to guarantee UTC regardless
+    of server's local timezone setting.
+    """
+    return datetime.fromtimestamp(
+        ms / 1000, tz=timezone.utc
+    ).replace(tzinfo=None)
+
+
+def _ms_from_db_datetime(dt: datetime) -> int:
+    """
+    Convert a naive UTC datetime from DB to milliseconds.
+    Explicitly marks as UTC before converting to avoid
+    local timezone interference.
+    """
+    return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def _mark_as_processed(session, vehicle_id: int):
+    """Mark all unprocessed gps_raw points for a vehicle as processed."""
+    session.execute(
+        text("""
+            UPDATE gps_raw SET processed = TRUE
+            WHERE vehicle_id = :vid AND processed = FALSE
+        """),
+        {"vid": vehicle_id}
+    )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -58,7 +88,7 @@ def process_gps_point(self, point_id: int):
                 "lat": result[2],
                 "lon": result[3],
                 "gps_time": result[4],
-                "location_time_ms": int(result[4].timestamp() * 1000)
+                "location_time_ms": _ms_from_db_datetime(result[4])
             }
 
             vehicle_id = current["vehicle_id"]
@@ -83,7 +113,7 @@ def process_gps_point(self, point_id: int):
                 "lat": last_result[1],
                 "lon": last_result[2],
                 "gps_time": last_result[3],
-                "location_time_ms": int(last_result[3].timestamp() * 1000)
+                "location_time_ms": _ms_from_db_datetime(last_result[3])
             }
 
             # ── LAYER 1: Threshold detection ──────────────────────────────
@@ -162,9 +192,9 @@ def check_trip_endings():
     print(f"[BEAT] Checking for completed trips...")
 
     with get_session() as session:
-        # Find vehicles whose last ping was > TRIP_BOUNDARY_SECONDS ago
-        # AND haven't been processed yet
-        cutoff_time = datetime.utcnow() - timedelta(seconds=TRIP_BOUNDARY_SECONDS)
+        cutoff_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+            seconds=TRIP_BOUNDARY_SECONDS
+        )
 
         vehicles = session.execute(
             text("""
@@ -194,8 +224,11 @@ def check_trip_endings():
             print(f"[BEAT] Vehicle {vehicle_id}: {point_count} points, "
                   f"trip {first_ping} → {last_ping}")
 
-            # Run Layer 2 on complete trip
-            run_layer2.delay(vehicle_id, first_ping.isoformat(), last_ping.isoformat())
+            run_layer2.delay(
+                vehicle_id,
+                first_ping.isoformat(),
+                last_ping.isoformat()
+            )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -206,6 +239,7 @@ def run_layer2(self, vehicle_id: int, first_ping_str: str, last_ping_str: str):
     """
     Full EDP + Valhalla + stoppage detection pipeline.
     Runs on complete trip data after trip ends.
+    All timestamps stored and processed as UTC.
     """
     try:
         first_ping = datetime.fromisoformat(first_ping_str)
@@ -233,11 +267,12 @@ def run_layer2(self, vehicle_id: int, first_ping_str: str, last_ping_str: str):
                 return
 
             # Convert to pipeline format
+            # CRITICAL: use _ms_from_db_datetime to treat stored datetime as UTC
             points = [
                 {
                     "lat": row[0],
                     "lon": row[1],
-                    "location_time_ms": int(row[2].timestamp() * 1000)
+                    "location_time_ms": _ms_from_db_datetime(row[2])
                 }
                 for row in rows
             ]
@@ -279,6 +314,7 @@ def run_layer2(self, vehicle_id: int, first_ping_str: str, last_ping_str: str):
                 if route_dist:
                     total_distance_m += route_dist
 
+                # CRITICAL: _utc_from_ms guarantees UTC storage
                 session.execute(
                     text("""
                         INSERT INTO gps_matched
@@ -289,9 +325,7 @@ def run_layer2(self, vehicle_id: int, first_ping_str: str, last_ping_str: str):
                         "vid": vehicle_id,
                         "lat": pt["lat"],
                         "lon": pt["lon"],
-                        "gps_time": datetime.utcfromtimestamp(
-                            pt["original_time_ms"] / 1000
-                        ),
+                        "gps_time": _utc_from_ms(pt["original_time_ms"]),
                         "dist": route_dist,
                         "trip_start": first_ping
                     }
@@ -299,8 +333,9 @@ def run_layer2(self, vehicle_id: int, first_ping_str: str, last_ping_str: str):
 
             # Step 6 — Save confirmed stoppages
             for s in stoppages:
-                started_at = datetime.utcfromtimestamp(s["started_at_ms"] / 1000)
-                ended_at = datetime.utcfromtimestamp(s["ended_at_ms"] / 1000)
+                # CRITICAL: _utc_from_ms guarantees UTC storage
+                started_at = _utc_from_ms(s["started_at_ms"])
+                ended_at = _utc_from_ms(s["ended_at_ms"])
 
                 # Check if suspected stoppage exists nearby — update it
                 existing = session.execute(
@@ -314,7 +349,6 @@ def run_layer2(self, vehicle_id: int, first_ping_str: str, last_ping_str: str):
                 ).fetchone()
 
                 if existing:
-                    # Update suspected → confirmed
                     session.execute(
                         text("""
                             UPDATE stoppages
@@ -333,7 +367,6 @@ def run_layer2(self, vehicle_id: int, first_ping_str: str, last_ping_str: str):
                         }
                     )
                 else:
-                    # Insert new confirmed stoppage
                     session.execute(
                         text("""
                             INSERT INTO stoppages
@@ -391,46 +424,3 @@ def run_layer2(self, vehicle_id: int, first_ping_str: str, last_ping_str: str):
     except Exception as exc:
         print(f"[LAYER 2 ERROR] vehicle {vehicle_id}: {exc}")
         raise self.retry(exc=exc)
-
-
-# ─────────────────────────────────────────────────────────────
-# MANUAL TRIGGER — for demo purposes only
-# ─────────────────────────────────────────────────────────────
-@celery_app.task
-def trigger_pipeline_now(vehicle_id: int):
-    """
-    Manually triggers Layer 2 for a vehicle immediately.
-    Used for demo purposes — bypasses the 30-minute wait.
-    """
-    print(f"[MANUAL TRIGGER] Running Layer 2 for vehicle {vehicle_id}")
-
-    with get_session() as session:
-        result = session.execute(
-            text("""
-                SELECT MIN(gps_time), MAX(gps_time)
-                FROM gps_raw
-                WHERE vehicle_id = :vid AND processed = FALSE
-            """),
-            {"vid": vehicle_id}
-        ).fetchone()
-
-        if not result or not result[0]:
-            print(f"[MANUAL TRIGGER] No unprocessed points for vehicle {vehicle_id}")
-            return
-
-        first_ping = result[0]
-        last_ping = result[1]
-
-    run_layer2.delay(vehicle_id, first_ping.isoformat(), last_ping.isoformat())
-    return {"status": "triggered", "vehicle_id": vehicle_id}
-
-
-def _mark_as_processed(session, vehicle_id: int):
-    """Mark all unprocessed gps_raw points for a vehicle as processed."""
-    session.execute(
-        text("""
-            UPDATE gps_raw SET processed = TRUE
-            WHERE vehicle_id = :vid AND processed = FALSE
-        """),
-        {"vid": vehicle_id}
-    )
