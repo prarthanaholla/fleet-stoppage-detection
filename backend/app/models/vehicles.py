@@ -8,5 +8,5 @@ class Vehicle(Base):
     name = Column(String(100), unique=True, nullable=False)
     last_lat = Column(Float)
     last_lng = Column(Float)
-    last_seen = Column(DateTime)
+    last_seen = Column(DateTime(timezone=True), nullable=True)
     org_id = Column(Integer, ForeignKey("organisations.id"), nullable=False)

@@ -28,7 +28,7 @@ async def ingest_gps(
     try:
         async with AsyncSessionLocal() as session:
             async with session.begin():
-                gps_time = ping.gps_time.replace(tzinfo=None)
+                gps_time = ping.gps_time
 
                 stmt = pg_insert(Vehicle).values(
                     name=ping.vehicle_name,
