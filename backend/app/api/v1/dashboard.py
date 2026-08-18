@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import text
 from app.db.session import AsyncSessionLocal
@@ -7,14 +7,16 @@ from app.auth import decode_access_token, security
 router = APIRouter()
 
 @router.get("/vehicles")
-async def get_vehicles(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_vehicles(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     token = credentials.credentials
     payload = decode_access_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
-    
+
     org_id = payload["org_id"]
-    
+
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             text("""
@@ -26,7 +28,7 @@ async def get_vehicles(credentials: HTTPAuthorizationCredentials = Depends(secur
             {"org_id": org_id}
         )
         rows = result.fetchall()
-    
+
     return [
         {
             "id": row[0],
@@ -40,16 +42,31 @@ async def get_vehicles(credentials: HTTPAuthorizationCredentials = Depends(secur
 
 
 @router.get("/stoppages")
-async def get_stoppages(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_stoppages(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0)
+):
     token = credentials.credentials
     payload = decode_access_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
 
     async with AsyncSessionLocal() as session:
+        # total count
+        count_result = await session.execute(
+            text("""
+                SELECT COUNT(*) FROM stoppages s
+                JOIN vehicles v ON s.vehicle_id = v.id
+                WHERE s.status = 'CONFIRMED'
+            """)
+        )
+        total = count_result.scalar()
+
+        # paginated results
         result = await session.execute(
             text("""
-                SELECT 
+                SELECT
                     s.id,
                     v.name as vehicle_name,
                     ST_Y(s.location::geometry) as lat,
@@ -62,27 +79,38 @@ async def get_stoppages(credentials: HTTPAuthorizationCredentials = Depends(secu
                 JOIN vehicles v ON s.vehicle_id = v.id
                 WHERE s.status = 'CONFIRMED'
                 ORDER BY s.started_at DESC
-            """)
+                LIMIT :limit OFFSET :offset
+            """),
+            {"limit": limit, "offset": offset}
         )
         rows = result.fetchall()
 
-    return [
-        {
-            "id": row[0],
-            "vehicle_name": row[1],
-            "lat": row[2],
-            "lng": row[3],
-            "started_at": str(row[4]),
-            "ended_at": str(row[5]),
-            "duration_seconds": row[6],
-            "status": row[7]
-        }
-        for row in rows
-    ]
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "data": [
+            {
+                "id": row[0],
+                "vehicle_name": row[1],
+                "lat": row[2],
+                "lng": row[3],
+                "started_at": str(row[4]),
+                "ended_at": str(row[5]),
+                "duration_seconds": row[6],
+                "status": row[7]
+            }
+            for row in rows
+        ]
+    }
 
 
 @router.get("/trip-path")
-async def get_trip_path(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_trip_path(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    limit: int = Query(default=500, le=1000),
+    offset: int = Query(default=0, ge=0)
+):
     token = credentials.credentials
     payload = decode_access_token(token)
     if not payload:
@@ -94,7 +122,9 @@ async def get_trip_path(credentials: HTTPAuthorizationCredentials = Depends(secu
                 SELECT lat, lon, gps_time
                 FROM gps_matched
                 ORDER BY gps_time ASC
-            """)
+                LIMIT :limit OFFSET :offset
+            """),
+            {"limit": limit, "offset": offset}
         )
         rows = result.fetchall()
 
