@@ -1,6 +1,32 @@
-venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+venv/
+
+# Environment
 .env
-backend/valhalla/custom_data/
+backend/.env
+
+# Celery
 backend/celerybeat-schedule*
+
+# Valhalla tiles 
+backend/valhalla/custom_data/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scripts 
+backend/scripts/*.geojson
