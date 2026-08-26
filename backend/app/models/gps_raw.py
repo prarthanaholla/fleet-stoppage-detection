@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, Boolean, func
+from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, Boolean, func, UniqueConstraint
 from app.db.base import Base
 
 class GpsRaw(Base):
@@ -12,3 +12,7 @@ class GpsRaw(Base):
     speed = Column(Float, nullable=True)
     processed = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("vehicle_id", "gps_time", name="unique_vehicle_gps_time"),
+    )
