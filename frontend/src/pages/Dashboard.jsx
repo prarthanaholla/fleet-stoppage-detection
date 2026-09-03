@@ -84,7 +84,7 @@ export default function Dashboard({ onLogout }) {
                 client.get('/api/v1/trip-path')
             ])
             setVehicles(vehiclesRes.data)
-            setStoppages(stoppagesRes.data)
+            setStoppages(stoppagesRes.data.data)
             setTripPath(pathRes.data)
         } catch (err) {
             console.error('Failed to fetch data:', err)
