@@ -124,12 +124,12 @@ def upgrade() -> None:
     )
 
     # Create spatial index on stoppages
-    op.create_index('idx_stoppages_location', 'stoppages', ['location'], unique=False, postgresql_using='gist')
+    op.execute("CREATE INDEX IF NOT EXISTS idx_stoppages_location ON stoppages USING gist (location)")
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index('idx_stoppages_location', table_name='stoppages', postgresql_using='gist')
+    op.execute("DROP INDEX IF EXISTS idx_stoppages_location")
     op.drop_table('stoppages')
     op.drop_table('gps_matched')
     op.drop_table('gps_raw')
