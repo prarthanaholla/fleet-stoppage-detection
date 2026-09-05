@@ -3,7 +3,7 @@ import requests
 from datetime import datetime, timedelta
 
 BASE_URL = "http://localhost:8000"
-EMAIL = "prarthana@porter.in"
+EMAIL = "prarthana@porter.in"  
 PASSWORD = "password123"
 GEOJSON_PATH = r"C:\Users\PRARTHANA A R\OneDrive\Documents\fleet-stoppage-detection\backend\scripts\rawgpsdata.geojson"
 
