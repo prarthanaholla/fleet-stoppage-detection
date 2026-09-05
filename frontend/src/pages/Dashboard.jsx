@@ -71,6 +71,7 @@ export default function Dashboard({ onLogout }) {
     const [tripPath, setTripPath] = useState([])
     const [selectedStoppage, setSelectedStoppage] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [totalStoppages, setTotalStoppages] = useState(0)
 
     useEffect(() => {
         fetchData()
@@ -85,6 +86,7 @@ export default function Dashboard({ onLogout }) {
             ])
             setVehicles(vehiclesRes.data)
             setStoppages(stoppagesRes.data.data)
+            setTotalStoppages(stoppagesRes.data.total)
             setTripPath(pathRes.data)
         } catch (err) {
             console.error('Failed to fetch data:', err)
@@ -164,6 +166,7 @@ export default function Dashboard({ onLogout }) {
                     {[
                         { label: 'Vehicles', value: vehicles.length },
                         { label: 'Stoppages', value: stoppages.length },
+                        { label: 'Total Stoppages', value: totalStoppages },
                     ].map(stat => (
                         <div key={stat.label} style={{
                             background: '#1e293b',
